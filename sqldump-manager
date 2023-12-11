@@ -1,0 +1,126 @@
+#!/bin/bash
+
+usage() {
+    echo "Usage: $0 [ -h ] [ -a | -d DB ]"
+}
+exit_bad() {
+    usage
+    exit 1
+}
+
+perform_dump() {
+
+    source <(echo "$2")
+
+    db_section=$1
+
+    if [ "$db_name" == "" ] ; then
+        echo "DB name is empty!"
+        exit 3
+    fi
+
+    dir="$dump_dir/$db_section"
+    file="${db_section}_$(date +%F_%H-%M-%S).sql"
+    fullPath="$dir/$file"
+    mkdir -p $dir
+
+    if [ "$docker_container" == "" ] ; then
+        echo "[$db_section] Dumping Database $db_name to file $fullPath (bin: $dump_bin)"
+        $dump_bin -u $db_user -p$db_password $db_name > $fullPath
+    else
+        echo "[$db_section] Dumping Database $db_name in container $docker_container to file $fullPath (bin: $dump_bin)"
+        docker exec -i $docker_container $dump_bin -u $db_user -p$db_password $db_name > $fullPath
+    fi
+
+    chmod $permissions $fullPath
+    lastSqlPath="$dir/last.sql"
+    if [ "$last_sql" == "copy" ] ; then
+        echo "[$db_section] Creating last.sql (copy)"
+        cp $fullPath $lastSqlPath
+    elif [ "$last_sql" == "symlink" ] ; then
+        echo "[$db_section] Creating last.sql (symlink)"
+        rm -f $lastSqlPath
+        ln -s $file $lastSqlPath
+    fi
+
+    if ! [ "$delete_older_than_x_days" == "" ] && [ $delete_older_than_x_days -gt 0 ] ; then
+        echo "[$db_section] Deleting backups older than $delete_older_than_x_days days"
+        find "$dir" -name "*.sql" -type f -mtime +$delete_older_than_x_days -delete
+    fi
+}
+
+
+
+all=0
+cmd_db=
+
+while getopts "had:" opt; do
+
+    case "${opt}" in
+        h)
+            usage
+            exit 1
+            ;;
+        a)
+            all=1
+            ;;
+        d)
+            cmd_db=${OPTARG}
+            ;;
+        *)
+            exit_bad
+            ;;
+    esac
+done
+
+if [ $all -eq 0 ] && [ "$cmd_db" == "" ] ; then
+    echo "No argument provided"
+    exit_bad
+fi
+
+
+
+HARDCODED_DEFAULTS="
+dump_dir="$HOME/sql_backups";
+dump_bin="/usr/bin/mysqldump";
+last_sql="copy";
+delete_older_than_x_days=0
+permissions=600
+db_name=;
+db_user=;
+db_password=;
+docker_container=;
+"
+
+CONF_DEFAULTS=""
+declare -A conf
+
+# load config file
+while IFS='=' read -r db key value; do
+    if [ "$db" == "default" ] ; then
+        CONF_DEFAULTS="$CONF_DEFAULTS$key=\"$value\";"
+    else
+        if ! [[ -v conf[$db] ]] ; then
+            conf[$db]=""
+        fi
+        conf[$db]="${conf[$db]}$key=\"$value\";"
+    fi
+    #echo "$db $key $value"
+done < <(awk '/^\[/ { db=substr($0,2,length-2) } /=/ { print db "=" $0 }' sqldump.conf)
+
+
+if ! [ "$cmd_db" == "" ] ; then
+
+    if ! [[ -v conf[$cmd_db] ]] ; then
+        echo "No Dump config with name $cmd_db was found!"
+        exit 2
+    fi
+
+    perform_dump $cmd_db "$HARDCODED_DEFAULTS$CONF_DEFAULTS${conf[$cmd_db]}"
+else
+    for section in "${!conf[@]}"
+    do
+        perform_dump $section "$HARDCODED_DEFAULTS$CONF_DEFAULTS${conf[$section]}"
+    done
+fi
+

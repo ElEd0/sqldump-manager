@@ -1,0 +1,18 @@
+
+# Default properties shared between all sections
+# feel free to change this values as you desire
+[default]
+dump_dir=$HOME/sql_backups
+dump_bin=/usr/bin/mysqldump
+last_sql=copy
+delete_older_than_x_days=90
+permissions=600
+
+# sample database
+[my_app]
+dump_bin=/usr/bin/mariadb-dump
+last_sql=symlink
+docker_container=my_app_db
+db_name=app
+db_user=root
+db_password=1234
