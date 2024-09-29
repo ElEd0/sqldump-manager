@@ -1,16 +1,31 @@
-
 # Default properties shared between all sections
 # feel free to change this values as you desire
-[default]
+[DEFAULT]
 dump_dir=$HOME/sql_backups
 dump_bin=/usr/bin/mysqldump
 last_sql=copy
 delete_older_than_x_days=90
 permissions=600
 
-# sample database
-[my_app]
+# Templates for mysql, mariadb and postgres DBs
+[MYSQL]
+is_template=1
+dump_bin=/usr/bin/mysqldump
+dump_com=$dump_bin --no-tablespaces -u $db_user -p$db_password $db_name
+
+[MARIADB]
+is_template=1
 dump_bin=/usr/bin/mariadb-dump
+dump_com=$dump_bin -u $db_user -p$db_password $db_name
+
+[POSTGRES]
+is_template=1
+dump_bin=/usr/bin/pg_dump
+dump_com=$dump_bin -U $db_user $db_name
+
+# sample entry (mariadb database with name app in container my_app_db)
+[my_app]
+parent_template=MARIADB
 last_sql=symlink
 docker_container=my_app_db
 db_name=app
